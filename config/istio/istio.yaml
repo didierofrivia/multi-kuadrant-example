@@ -1,0 +1,20 @@
+apiVersion: sailoperator.io/v1
+kind: Istio
+metadata:
+  name: default
+spec:
+  version: v1.27.1
+  profile: default
+  # Disable autoscaling to reduce dev resources
+  values:
+    global:
+      variant: debug
+      logging:
+        level: "all:debug"
+    meshConfig:
+      trustDomain: nip.io
+      discoverySelectors:
+        - matchLabels:
+            istio-discovery: enabled
+    pilot:
+      autoscaleEnabled: false
