@@ -211,7 +211,6 @@ install-no-mesh-curl-client:
 enable-mtls:
 	@echo "Enabling STRICT mTLS in the mesh..."
 	kubectl apply -n $(ISTIO_NS) -f config/istio/mtls/peerauthentication.yaml
-	#kubectl apply -n $(APP_NS) -f config/istio/mtls/destination-rule.yaml
 	@echo "mTLS enabled successfully"
 
 .PHONY: mtls-mode-strict
