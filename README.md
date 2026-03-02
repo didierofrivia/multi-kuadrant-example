@@ -63,7 +63,6 @@ graph TB
     Istiod -.injects.-> EchoDep
     Istiod -.injects.-> CurlMeshDep
     PeerAuth -.enforces mTLS.-> Istiod
-    DestRule -.configures.-> EchoSvc
 
     style NS_MeshApps fill:#e1f5ff
     style NS_MeshClient fill:#e1ffe1
