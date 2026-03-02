@@ -76,5 +76,4 @@ graph TB
     style CurlMeshDep fill:#98fb98
     style CurlNoMeshDep fill:#ffb6c1
     style PeerAuth fill:#dda0dd
-    style DestRule fill:#87ceeb
 ```
