@@ -11,6 +11,8 @@ spec:
       variant: debug
       logging:
         level: "all:debug"
+      proxy:
+        privileged: true
     meshConfig:
       trustDomain: nip.io
       discoverySelectors:
