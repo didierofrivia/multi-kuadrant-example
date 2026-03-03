@@ -17,6 +17,8 @@ graph TB
             SailOperator[Sail Operator]
             Istiod[Istiod Control Plane]
             PeerAuth[PeerAuthentication<br/>mode: PERMISSIVE/STRICT]
+            RootCACert[Certificate<br/>istio-root-ca]
+            CacertsSecret[Secret<br/>cacerts]
         end
 
         subgraph NS_CNI["istio-cni namespace"]
@@ -35,12 +37,12 @@ graph TB
         subgraph NS_MeshApps["mesh-demo-apps namespace<br/>(istio-discovery=enabled, istio-injection=enabled)"]
             HTTPRoute[HTTPRoute<br/>echo-route<br/>path: /echo]
             EchoSvc[Service<br/>echo-api<br/>port: 3000]
-            EchoDep[Deployment<br/>echo-api<br/>+ Envoy Sidecar]
+            EchoDep[Deployment<br/>echo-api<br/>+ Envoy Sidecar<br/>+ Workload Cert]
         end
 
         subgraph NS_MeshClient["mesh-client-apps namespace<br/>(istio-discovery=enabled, istio-injection=enabled)"]
             CurlMeshSvc[Service<br/>curl-client<br/>port: 8080]
-            CurlMeshDep[Deployment<br/>curl-client<br/>+ Envoy Sidecar]
+            CurlMeshDep[Deployment<br/>curl-client<br/>+ Envoy Sidecar<br/>+ Workload Cert]
         end
 
         subgraph NS_NoMeshClient["no-mesh-client-apps namespace"]
@@ -58,6 +60,12 @@ graph TB
     CurlMeshDep -.mTLS.-> EchoSvc
     CurlNoMeshDep -.plain HTTP.-> EchoSvc
 
+    CertManager -.manages.-> RootCACert
+    RootCACert -.provides.-> CacertsSecret
+    CacertsSecret -.used by.-> Istiod
+    Istiod -.issues workload certs.-> EchoDep
+    Istiod -.issues workload certs.-> CurlMeshDep
+
     Istiod -.manages.-> GW
     KuadrantOp -.manages.-> GW
     Istiod -.injects.-> EchoDep
@@ -70,12 +78,16 @@ graph TB
     style NS_Gateway fill:#fff4e1
     style NS_Kuadrant fill:#ffe1f5
     style NS_Istio fill:#f5e1ff
+    style NS_CertManager fill:#fff0e6
     style GW fill:#ffd700
     style HTTPRoute fill:#90ee90
     style EchoDep fill:#87ceeb
     style CurlMeshDep fill:#98fb98
     style CurlNoMeshDep fill:#ffb6c1
     style PeerAuth fill:#dda0dd
+    style RootCACert fill:#ffa07a
+    style CacertsSecret fill:#ff8c42
+    style CertManager fill:#ff7f50
 ```
 
 ## TODO
