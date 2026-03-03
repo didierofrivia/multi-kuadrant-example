@@ -13,6 +13,9 @@ NO_MESH_CLIENT_NS ?= no-mesh-client-apps
 KUADRANT_NS ?= kuadrant-system
 KUADRANT_CONFIG_DIR = config/kuadrant
 
+CERT_MANAGER_CONFIG_DIR = config/cert-manager
+SCRIPTS_DIR = scripts
+
 .PHONY: help
 help:
 	@echo "Available targets:"
@@ -37,6 +40,8 @@ help:
 	@echo "  install-curl-client   - Install curl client in separate namespace"
 	@echo ""
 	@echo "Security Configuration:"
+	@echo "  setup-custom-ca       - Create custom CA certificates for Istio (run before install-istio)"
+	@echo "  clean-certificates    - Remove all certificate resources"
 	@echo "  enable-mtls           - Enable (PERMISSIVE by default) mTLS in the mesh"
 	@echo "  mtls-mode-strict      - Switch to STRICT mTLS in the mesh"
 	@echo "  mtls-mode-permissive  - Switch to PERMISSIVE mTLS in the mesh"
@@ -114,11 +119,37 @@ install-cert-manager:
 		--version v1.15.3 \
 		--set crds.enabled=true
 
+.PHONY: setup-custom-ca
+setup-custom-ca:
+	@echo "Setting up custom CA certificates for Istio..."
+	@echo "Applying root CA certificate configuration..."
+	kubectl apply -f $(CERT_MANAGER_CONFIG_DIR)/root-ca.yaml
+	@echo "Waiting for certificate to be ready..."
+	kubectl wait --for=condition=Ready certificate/istio-root-ca -n $(ISTIO_NS) --timeout=300s
+	@echo "Creating Istio cacerts secret..."
+	$(SCRIPTS_DIR)/create-istio-cacerts.sh
+	@echo "Custom CA setup complete!"
+
+.PHONY: clean-certificates
+clean-certificates:
+	@echo "Removing all certificate resources..."
+	kubectl delete certificate istio-root-ca -n $(ISTIO_NS) --ignore-not-found=true
+	kubectl delete secret istio-root-ca-secret -n $(ISTIO_NS) --ignore-not-found=true
+	kubectl delete secret cacerts -n $(ISTIO_NS) --ignore-not-found=true
+	kubectl delete clusterissuer selfsigned-issuer --ignore-not-found=true
+	@echo "Certificate resources removed"
+
 .PHONY: install-istio
 install-istio:
 	@echo "Installing Istio through sail operator..."
+	# Create istio-system namespace first (required for custom CA setup)
+	kubectl create namespace $(ISTIO_NS) || true
+
+	# Setup custom CA certificates BEFORE installing Istio
+	make setup-custom-ca
+
+	# Install Istio via Sail Operator (will automatically pick up cacerts)
 	helm install sail-operator \
-		--create-namespace \
 		--namespace $(ISTIO_NS) \
 		--wait \
 		--timeout=300s \
