@@ -81,13 +81,25 @@ graph TB
 ## TODO
 
 ### 1. Custom Certificates for mTLS with cert-manager
-- [ ] Create root CA certificate using cert-manager
-- [ ] Configure Issuer/ClusterIssuer for custom certificates
-- [ ] Generate intermediate CA certificates
-- [ ] Document certificate creation process
-- [ ] Configure Istio to use custom certificates from cert-manager
-- [ ] Update PeerAuthentication to use custom CA
-- [ ] Validate mTLS with custom certificates
+- [x] Create root CA certificate using cert-manager
+- [x] Configure Issuer/ClusterIssuer for custom certificates
+- [x] Generate CA certificates (using single-level hierarchy)
+- [x] Document certificate creation process
+- [x] Configure Istio to use custom certificates from cert-manager
+- [x] Validate mTLS with custom certificates
+
+**Implementation:** Custom CA certificates are automatically configured during installation. The setup uses cert-manager to create a self-signed root CA certificate in the `istio-system` namespace, which is then converted to Istio's `cacerts` format. Istio automatically picks up these certificates on startup.
+
+**Commands:**
+- `make setup-custom-ca` - Create and configure custom CA certificates (run automatically during `make install`)
+- `make clean-certificates` - Remove all certificate resources
+- `make test-mtls` - Validate mTLS is working with custom certificates
+
+**Certificate Details:**
+- Root CA lifetime: 10 years (renews 1 year before expiry)
+- Single-level hierarchy (root CA directly signs workload certificates)
+- Certificates managed by cert-manager in `istio-system` namespace
+- Trust domain: `*.10.89.0.0.nip.io` (cluster-a)
 
 ### 2. Two Service Meshes in Same Cluster
 - [ ] Deploy second Istio control plane (mesh-2)
