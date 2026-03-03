@@ -77,3 +77,47 @@ graph TB
     style CurlNoMeshDep fill:#ffb6c1
     style PeerAuth fill:#dda0dd
 ```
+
+## TODO
+
+### 1. Custom Certificates for mTLS with cert-manager
+- [ ] Create root CA certificate using cert-manager
+- [ ] Configure Issuer/ClusterIssuer for custom certificates
+- [ ] Generate intermediate CA certificates
+- [ ] Document certificate creation process
+- [ ] Configure Istio to use custom certificates from cert-manager
+- [ ] Update PeerAuthentication to use custom CA
+- [ ] Validate mTLS with custom certificates
+
+### 2. Two Service Meshes in Same Cluster
+- [ ] Deploy second Istio control plane (mesh-2)
+- [ ] Configure separate istio-system-2 namespace
+- [ ] Set up mesh-1 and mesh-2 with separate discovery
+- [ ] Share same custom certificates across both meshes
+- [ ] Configure mTLS between services in different meshes
+- [ ] Deploy demo apps/curl clients in each mesh namespace
+- [ ] Test cross-mesh communication with shared certificates
+- [ ] Add architecture diagram with dual mesh setup
+- [ ] Document mesh isolation and certificate sharing
+
+### 3. Secure echo-api with Kuadrant using Custom Certificates
+- [ ] Configure TLSPolicy for echo-api using custom certificates
+- [ ] Implement AuthPolicy for authentication
+- [ ] Add RateLimitPolicy for API protection
+- [ ] Test HTTPS access to echo-api through gateway
+- [ ] Validate certificate chain and mTLS end-to-end
+- [ ] Document Kuadrant security configuration
+
+### 4. Multi-Cluster with Same Mesh Configuration using Custom Certificates
+- [ ] Set up cluster-b with same Istio version and configuration
+- [ ] Configure shared root CA across both clusters
+- [ ] Distribute custom certificates to cluster-a and cluster-b
+- [ ] Configure east-west gateway for cross-cluster communication
+- [ ] Set up service mesh federation between clusters
+- [ ] Configure cross-cluster service discovery
+- [ ] Enable mTLS for cross-cluster traffic using shared certificates
+- [ ] Deploy echo-api and curl-client across both clusters
+- [ ] Test cross-cluster mTLS communication
+- [ ] Configure multi-cluster gateway and routing
+- [ ] Add multi-cluster architecture diagram
+- [ ] Document multi-cluster certificate management
