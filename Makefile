@@ -53,7 +53,7 @@ help:
 	@echo "  install               - Install Kuadrant operator in both clusters"
 	@echo ""
 	@echo "Complete Setup:"
-	@echo "  setup                 - Create clusters and install all components"
+	@echo "  setup-example-1       - Create single cluster, single mesh and install all components"
 
 .PHONY: create-cluster-a
 create-cluster-a:
@@ -265,8 +265,8 @@ test-mtls:
 	@echo "=== Test 2: Direct service outside the mesh call ==="
 	kubectl exec -n $(NO_MESH_CLIENT_NS) deploy/curl-client -- curl -s http://echo-api.$(MESH_APP_NS).svc.cluster.local:3000/echo | jq '.headers["HTTP_X_FORWARDED_CLIENT_CERT"]'
 
-.PHONY: setup
-setup: create-clusters install
+.PHONY: setup-example-1
+setup-example-1: create-cluster-a install
 	kubectl -n $(KUADRANT_NS) wait --timeout=240s --for=condition=Available deployments --all
 	kubectl -n $(MESH_APP_NS) wait --timeout=240s --for=condition=Available deployments --all
 	@echo "Setup successfully finished"
