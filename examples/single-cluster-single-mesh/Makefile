@@ -22,6 +22,11 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo ""
+	@echo "Cluster Management:"
+	@echo "  create-cluster-a     - Create kind cluster A"
+	@echo "  delete-cluster-a     - Delete kind cluster A"
+	@echo "  clean                - Delete all clusters"
+	@echo ""
 	@echo "Component Installation:"
 	@echo "  install-dependencies  - Install Gateway API, MetalLB, cert-manager, and Istio"
 	@echo "  install-metallb       - Install MetalLB load balancer"
@@ -43,6 +48,23 @@ help:
 	@echo ""
 	@echo "Complete Setup:"
 	@echo "  setup               - Complete installation of all components"
+
+.PHONY: create-cluster-a
+create-cluster-a:
+	@echo "Creating cluster A..."
+	kind create cluster --config ../../kind/kind-cluster-a.yaml
+	@echo "Cluster A created successfully"
+	@echo "HTTP: localhost:8080"
+	@echo "HTTPS: localhost:8443"
+
+.PHONY: delete-cluster-a
+delete-cluster-a:
+	@echo "Deleting cluster A..."
+	kind delete cluster --name cluster-a
+
+.PHONY: clean
+clean: delete-cluster-a
+	@echo "Clusters deleted"
 
 .PHONY: helm-kuadrant-repo
 helm-kuadrant-repo:
@@ -191,7 +213,7 @@ test-mtls:
 	kubectl exec -n $(NO_MESH_CLIENT_NS) deploy/curl-client -- curl -s http://echo-api.$(MESH_APP_NS).svc.cluster.local:3000/echo | jq '.headers["HTTP_X_FORWARDED_CLIENT_CERT"]'
 
 .PHONY: setup
-setup: helm-kuadrant-repo install-dependencies install-kuadrant install-ingress-gateway install-echo-api install-mesh-curl-client install-no-mesh-curl-client
+setup: create-cluster-a helm-kuadrant-repo install-dependencies install-kuadrant install-ingress-gateway install-echo-api install-mesh-curl-client install-no-mesh-curl-client
 	@echo ""
 	@echo "Waiting for deployments to be ready..."
 	kubectl -n $(KUADRANT_NS) wait --timeout=240s --for=condition=Available deployments --all
