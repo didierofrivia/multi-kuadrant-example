@@ -1,0 +1,25 @@
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: echo-api-2-external
+  namespace: mesh-client-apps
+spec:
+  hosts:
+    - echo-api-2.mesh-demo-apps-2.svc.cluster.local
+  ports:
+    - number: 3000
+      name: http
+      protocol: HTTP
+  location: MESH_INTERNAL
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: echo-api-2-mtls
+  namespace: mesh-client-apps
+spec:
+  host: echo-api-2.mesh-demo-apps-2.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL

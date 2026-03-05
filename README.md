@@ -1,6 +1,30 @@
-# Multi Cluster App Security with Kuadrant
+# Multi-Cluster App Security with Kuadrant
 
-## Single Cluster Architecture
+This repository demonstrates Istio service mesh configurations with Kuadrant and custom CA certificates managed by cert-manager.
+
+## Examples
+
+### 1. [Single Cluster, Single Mesh](examples/single-cluster-single-mesh/)
+Demonstrates a complete Istio service mesh with custom CA certificates.
+
+**Features:**
+- One Kubernetes cluster (kind)
+- One Istio mesh
+- Custom CA certificates via cert-manager
+- mTLS communication between workloads
+- Kuadrant integration
+
+**Run:**
+```bash
+make setup-example-1
+```
+
+**Docs:** [examples/single-cluster-single-mesh/README.md](examples/single-cluster-single-mesh/README.md)
+
+
+#### Architecture Overview
+
+##### Example 1: Single Mesh
 
 ```mermaid
 graph TB
@@ -90,39 +114,213 @@ graph TB
     style CertManager fill:#ff7f50
 ```
 
+---
+
+### 2. [Single Cluster, Dual Mesh](examples/single-cluster-dual-mesh/)
+Demonstrates two independent Istio meshes in the same cluster with shared root CA.
+
+**Features:**
+- One Kubernetes cluster (kind)
+- Two independent Istio meshes
+- Shared root CA for cross-mesh mTLS
+- Separate control planes and trust domains
+- Cross-mesh secure communication
+
+**Run:**
+```bash
+make setup-example-2
+```
+
+**Docs:** [examples/single-cluster-dual-mesh/README.md](examples/single-cluster-dual-mesh/README.md)
+
+##### Example 2: Dual Mesh
+
+```mermaid
+graph TB
+    subgraph Cluster["Kubernetes Cluster (kind-cluster-a)"]
+        subgraph NS_CertManager["cert-manager namespace"]
+            CertManager[cert-manager]
+            RootCA[Shared Root CA]
+        end
+
+        subgraph NS_CNI["istio-cni namespace"]
+            IstioCNI[Istio CNI]
+        end
+
+        subgraph Mesh1["Mesh-1"]
+            subgraph NS_Istio1["istio-system namespace"]
+                Istiod1[Istiod]
+                PeerAuth1[PeerAuthentication<br/>STRICT]
+            end
+
+            subgraph NS_Apps1["mesh-demo-apps namespace"]
+                Echo1[echo-api<br/>+ Sidecar]
+                EchoSvc1[Service<br/>echo-api]
+            end
+
+            subgraph NS_Client1["mesh-client-apps namespace"]
+                Curl1[curl-client<br/>+ Sidecar]
+            end
+        end
+
+        subgraph Mesh2["Mesh-2"]
+            subgraph NS_Istio2["istio-system-2 namespace"]
+                Istiod2[Istiod]
+                PeerAuth2[PeerAuthentication<br/>STRICT]
+            end
+
+            subgraph NS_Apps2["mesh-demo-apps-2 namespace"]
+                Echo2[echo-api-2<br/>+ Sidecar]
+                EchoSvc2[Service<br/>echo-api-2]
+            end
+
+            subgraph NS_Client2["mesh-client-apps-2 namespace"]
+                Curl2[curl-client<br/>+ Sidecar]
+            end
+        end
+    end
+
+    CertManager -.manages.-> RootCA
+    RootCA -.shared by.-> Istiod1
+    RootCA -.shared by.-> Istiod2
+
+    Istiod1 -.injects.-> Echo1
+    Istiod1 -.injects.-> Curl1
+    Istiod2 -.injects.-> Echo2
+    Istiod2 -.injects.-> Curl2
+
+    EchoSvc1 --> Echo1
+    EchoSvc2 --> Echo2
+
+    Curl1 -.intra-mesh mTLS.-> EchoSvc1
+    Curl2 -.intra-mesh mTLS.-> EchoSvc2
+    Curl1 -.cross-mesh mTLS.-> EchoSvc2
+    Curl2 -.cross-mesh mTLS.-> EchoSvc1
+
+    style Mesh1 fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
+    style Mesh2 fill:#ffe1f5,stroke:#cc0066,stroke-width:2px
+    style NS_CertManager fill:#fff0e6
+    style NS_CNI fill:#fff0f0
+    style NS_Istio1 fill:#cce6ff
+    style NS_Istio2 fill:#ffcce6
+    style NS_Apps1 fill:#d9ecff
+    style NS_Apps2 fill:#ffd9ec
+    style NS_Client1 fill:#e6f2ff
+    style NS_Client2 fill:#ffe6f2
+    style CertManager fill:#ff7f50
+    style RootCA fill:#ffa07a
+    style Istiod1 fill:#87ceeb
+    style Istiod2 fill:#dda0dd
+    style Echo1 fill:#87ceeb
+    style Echo2 fill:#dda0dd
+    style Curl1 fill:#98fb98
+    style Curl2 fill:#ffb6c1
+```
+
+---
+
+## Quick Start
+
+Choose an example and run:
+
+```bash
+# Example 1 - Single mesh with custom certificates
+make setup-example-1
+
+# Example 2 - Dual mesh with shared CA
+make setup-example-2
+```
+
+## Prerequisites
+
+- [kind](https://kind.sigs.k8s.io/) - Kubernetes in Docker
+- kubectl
+- helm
+- jq
+- yq
+
+## Cluster Management
+
+```bash
+# Create cluster
+make create-cluster-a
+
+# Delete cluster
+make delete-cluster-a
+
+# Delete all clusters
+make clean
+```
+
+## Repository Structure
+
+```
+euro-info/
+├── Makefile                              # Top-level orchestrator
+├── README.md                             # This file
+├── kind/                                 # Shared cluster configs
+│   ├── kind-cluster-a.yaml
+│   └── kind-cluster-b.yaml
+├── examples/
+│   ├── single-cluster-single-mesh/      # Example 1
+│   │   ├── README.md
+│   │   ├── Makefile
+│   │   ├── config/
+│   │   │   ├── cert-manager/
+│   │   │   ├── istio/
+│   │   │   ├── apps/
+│   │   │   ├── kuadrant/
+│   │   │   └── metallb/
+│   │   └── scripts/
+│   │       └── create-istio-cacerts.sh
+│   │
+│   └── single-cluster-dual-mesh/        # Example 2
+│       ├── README.md
+│       ├── Makefile
+│       ├── config/
+│       │   ├── cert-manager/
+│       │   ├── istio/
+│       │   ├── apps/
+│       │   └── metallb/
+│       └── scripts/
+│           └── create-istio-cacerts.sh
+```
+
 ## TODO
 
-### 1. Custom Certificates for mTLS with cert-manager
+### ✅ 1. Custom Certificates for mTLS with cert-manager
 - [x] Create root CA certificate using cert-manager
 - [x] Configure Issuer/ClusterIssuer for custom certificates
 - [x] Generate CA certificates (using single-level hierarchy)
 - [x] Document certificate creation process
 - [x] Configure Istio to use custom certificates from cert-manager
 - [x] Validate mTLS with custom certificates
+- [x] Refactor into example-1
 
-**Implementation:** Custom CA certificates are automatically configured during installation. The setup uses cert-manager to create a self-signed root CA certificate in the `istio-system` namespace, which is then converted to Istio's `cacerts` format. Istio automatically picks up these certificates on startup.
-
-**Commands:**
-- `make setup-custom-ca` - Create and configure custom CA certificates (run automatically during `make install`)
-- `make clean-certificates` - Remove all certificate resources
-- `make test-mtls` - Validate mTLS is working with custom certificates
+**Status:** Complete. See [Example 1](examples/single-cluster-single-mesh/).
 
 **Certificate Details:**
-- Root CA lifetime: 10 years (renews 1 year before expiry)
+- Root CA lifetime: 10 years
 - Single-level hierarchy (root CA directly signs workload certificates)
-- Certificates managed by cert-manager in `istio-system` namespace
-- Trust domain: `*.10.89.0.0.nip.io` (cluster-a)
+- Certificates managed by cert-manager
+- Trust domain: `10.89.0.0.nip.io`
 
-### 2. Two Service Meshes in Same Cluster
-- [ ] Deploy second Istio control plane (mesh-2)
-- [ ] Configure separate istio-system-2 namespace
-- [ ] Set up mesh-1 and mesh-2 with separate discovery
-- [ ] Share same custom certificates across both meshes
-- [ ] Configure mTLS between services in different meshes
-- [ ] Deploy demo apps/curl clients in each mesh namespace
-- [ ] Test cross-mesh communication with shared certificates
-- [ ] Add architecture diagram with dual mesh setup
-- [ ] Document mesh isolation and certificate sharing
+---
+
+### ✅ 2. Two Service Meshes in Same Cluster
+- [x] Deploy second Istio control plane (mesh-2)
+- [x] Configure separate istio-system-2 namespace
+- [x] Set up mesh-1 and mesh-2 with separate discovery
+- [x] Share same custom certificates across both meshes
+- [x] Configure mTLS between services in different meshes
+- [x] Deploy demo apps/curl clients in each mesh namespace
+- [x] Test cross-mesh communication with shared certificates
+- [x] Add architecture diagram with dual mesh setup
+- [x] Document mesh isolation and certificate sharing
+
+**Status:** Complete. See [Example 2](examples/single-cluster-dual-mesh/).
+
+---
 
 ### 3. Secure echo-api with Kuadrant using Custom Certificates
 - [ ] Configure TLSPolicy for echo-api using custom certificates
@@ -131,6 +329,8 @@ graph TB
 - [ ] Test HTTPS access to echo-api through gateway
 - [ ] Validate certificate chain and mTLS end-to-end
 - [ ] Document Kuadrant security configuration
+
+---
 
 ### 4. Multi-Cluster with Same Mesh Configuration using Custom Certificates
 - [ ] Set up cluster-b with same Istio version and configuration
@@ -145,3 +345,5 @@ graph TB
 - [ ] Configure multi-cluster gateway and routing
 - [ ] Add multi-cluster architecture diagram
 - [ ] Document multi-cluster certificate management
+
+---

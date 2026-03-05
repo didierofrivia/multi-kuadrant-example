@@ -1,0 +1,37 @@
+apiVersion: sailoperator.io/v1
+kind: Istio
+metadata:
+  name: default
+spec:
+  version: v1.27.1
+  namespace: istio-system
+  profile: default
+  values:
+    global:
+      variant: debug
+      logging:
+        level: "all:debug"
+      proxy:
+        privileged: true
+      network: network-1
+    meshConfig:
+      trustDomain: mesh-1.10.89.0.0.nip.io
+      trustDomainAliases:
+        - mesh-2.10.89.0.0.nip.io
+      accessLogFile: /dev/stdout
+      accessLogEncoding: JSON
+      accessLogFormat: |
+        [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%"
+        %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT%
+        %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%
+        "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%"
+        "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%"
+      discoverySelectors:
+        - matchLabels:
+            istio-discovery: enabled
+            mesh: mesh-1
+      defaultConfig:
+        proxyMetadata:
+          ISTIO_META_DNS_CAPTURE: "true"
+    pilot:
+      autoscaleEnabled: false
