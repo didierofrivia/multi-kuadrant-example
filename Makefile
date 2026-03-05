@@ -6,6 +6,7 @@ help:
 	@echo ""
 	@echo "Available Examples:"
 	@echo "  setup-example-1            - Single cluster, single mesh with custom certificates"
+	@echo "  setup-example-2            - Single cluster, dual mesh with shared certificates"
 	@echo ""
 	@echo "Cluster Management:"
 	@echo "  create-cluster-a     - Create kind cluster A"
@@ -51,10 +52,24 @@ setup-example-1: create-cluster-a
 	@echo "Running Example 1: Single Cluster, Single Mesh"
 	@echo "======================================"
 	@echo ""
-	cd examples/single-cluster-single-mesh && $(MAKE) install
+	cd examples/single-cluster-single-mesh && $(MAKE) setup
 	@echo ""
 	@echo "======================================"
 	@echo "Example 1 complete!"
 	@echo "======================================"
 	@echo ""
 	@echo "Test with: cd examples/single-cluster-single-mesh && make test-mtls"
+
+.PHONY: setup-example-2
+setup-example-2: create-cluster-a
+	@echo "======================================"
+	@echo "Running Example 2: Single Cluster, Dual Mesh"
+	@echo "======================================"
+	@echo ""
+	cd examples/single-cluster-dual-mesh && $(MAKE) setup
+	@echo ""
+	@echo "======================================"
+	@echo "Example 2 complete!"
+	@echo "======================================"
+	@echo ""
+	@echo "Test with: cd examples/single-cluster-dual-mesh && make test-cross-mesh"
