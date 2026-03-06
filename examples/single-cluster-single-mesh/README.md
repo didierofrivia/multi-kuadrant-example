@@ -4,12 +4,18 @@ This example demonstrates a complete Istio service mesh setup with custom CA cer
 
 ## Features
 
+### Core Setup
 - Single Kubernetes cluster (kind)
-- Single Istio service mesh
-- Custom CA certificates via cert-manager
-- mTLS communication between workloads
-- Kuadrant integration
+- Single Istio service mesh with mTLS
+- Custom CA certificates via cert-manager (10-year root CA)
+- Service-to-service mTLS communication
 - MetalLB for load balancer support
+- Gateway API v1.4.0
+
+### Kuadrant Security Policies
+- **TLSPolicy**: HTTPS termination with automatic certificate management
+- **AuthPolicy**: API key authentication via Authorino
+- **RateLimitPolicy**: Request rate limiting (5 req/10s) via Limitador
 
 ## Prerequisites
 
@@ -21,16 +27,42 @@ This example demonstrates a complete Istio service mesh setup with custom CA cer
 
 ## Quick Start
 
-### From Repository Root
+### Basic Setup (without Kuadrant policies)
 
+**From Repository Root:**
 ```bash
 make setup-example-1
 ```
 
-### From This Directory
-
+**From This Directory:**
 ```bash
 make setup
+```
+
+This installs:
+- Istio service mesh with custom CA certificates
+- cert-manager for certificate management
+- MetalLB for load balancing
+- Echo API application
+- Test clients (with and without sidecars)
+
+### With Kuadrant Security Policies
+
+**From This Directory:**
+```bash
+make setup-with-kuadrant
+```
+
+This installs everything above **plus**:
+- Kuadrant operator (Authorino + Limitador)
+- TLSPolicy (HTTPS with auto-managed certificates)
+- AuthPolicy (API key authentication)
+- RateLimitPolicy (5 requests per 10 seconds)
+
+**Test the policies:**
+```bash
+make test-auth        # Test API key authentication
+make test-ratelimit   # Test rate limiting
 ```
 
 ## Architecture
@@ -171,13 +203,12 @@ graph TB
 - **Gateway API**: v1.4.0
 - **Istio CNI**: Shared container network interface
 
-### Kuadrant Platform
+### Kuadrant
 - **Kuadrant Operator**: Latest from helm repo
-- **Authorino**: API authentication/authorization engine
-- **Limitador**: Rate limiting service
-- **Kuadrant CR**: Enables mTLS support
+- **Authorino and its Operator**: API authentication/authorization engine
+- **Limitador and its Operator**: Rate limiting service
 
-### Policies (Optional)
+### Policies
 - **TLSPolicy**: HTTPS termination with custom CA certificates
 - **AuthPolicy**: API Key authentication (Bearer token)
 - **RateLimitPolicy**: 5 requests per 10 seconds
@@ -292,70 +323,292 @@ kubectl get secret -n istio-system istio-root-ca-secret -o jsonpath='{.data.tls\
 
 ## Kuadrant Security Policies
 
-The example includes optional Kuadrant policies to secure the echo-api through the ingress gateway.
+The example includes optional Kuadrant policies to secure the echo-api through the ingress gateway. These policies demonstrate API management capabilities including TLS termination, authentication, and rate limiting.
 
-### Available Policies
-1. TLSPolicy - HTTPS with Custom Certificates
-2. AuthPolicy - API Key Authentication
-3. RateLimitPolicy - API Protection
+### Overview
 
-### Install
+Kuadrant provides three main policies:
+
+1. **TLSPolicy** - HTTPS termination with automatic certificate management
+2. **AuthPolicy** - API key-based authentication via Authorino
+3. **RateLimitPolicy** - Request rate limiting via Limitador
+
+### Installation
+
+#### Option 1: Complete Setup with Kuadrant
+
+Install everything including Kuadrant and all policies:
 
 ```bash
-# Install everything including policies
 make setup-with-kuadrant
+```
 
-# Or add kuadrant and its policies to existing setup
+#### Option 2: Add Kuadrant to Existing Setup
+
+If you already ran `make setup`, add Kuadrant and policies:
+
+```bash
 make setup-kuadrant
+```
+
+#### Option 3: Install Policies Individually
+
+```bash
+# Install Kuadrant operator and CR
+make install-kuadrant
+
+# Install TLS certificate and policy
+make setup-gateway-tls
+make install-tlspolicy
+
+# Install rate limiting
+make install-ratelimit
+
+# Install authentication
+make install-auth
 ```
 
 ### Policy Architecture
 
 ```
-Client Request
+External HTTPS Request
     ↓
-Gateway (HTTPS - TLSPolicy)
+Gateway (port 443)
     ↓
-AuthPolicy (API Key validation)
+TLSPolicy ← cert-manager (auto-managed certificate)
     ↓
-RateLimitPolicy (10 req/min)
+AuthPolicy ← Authorino (validates API key)
+    ↓
+RateLimitPolicy ← Limitador (enforces rate limit)
     ↓
 HTTPRoute (echo-route)
     ↓
-echo-api Service
+echo-api Service (port 3000)
 ```
 
-### Testing the Complete Flow
+### Policy Details
+
+#### 1. TLSPolicy
+
+**Purpose**: Enables HTTPS on the gateway with automatic certificate management.
+
+**Configuration** (`config/kuadrant/tlspolicy.yaml`):
+- Targets: Gateway `kuadrant-ingressgateway`
+- Issuer: `ingress-selfsigned-issuer` (ClusterIssuer)
+- Certificate: Auto-created and renewed by cert-manager
+- Protocol: TLS termination at gateway
+
+**What it does**:
+- Creates HTTPS listener on port 443
+- Automatically provisions TLS certificate
+- Handles certificate renewal
+- Terminates TLS at the gateway
+
+**Files involved**:
+- `config/cert-manager/ingress-issuer.yaml` - Self-signed ClusterIssuer
+- `config/kuadrant/tlspolicy.yaml` - TLS policy configuration
+- `config/istio/gateway/gateway.yaml` - Gateway with HTTPS listener
+
+#### 2. AuthPolicy
+
+**Purpose**: Requires valid API key for all requests to echo-api.
+
+**Configuration** (`config/kuadrant/authpolicy.yaml`):
+- Targets: HTTPRoute `echo-route`
+- Method: API Key authentication
+- Header: `Authorization: Bearer <api-key>`
+- Validator: Authorino
+- Secret: `api-key-1` in `kuadrant-system` namespace
+
+**What it does**:
+- Validates API key on every request
+- Returns HTTP 401 for missing/invalid keys
+- Adds `X-Auth-Data: authenticated` header on success
+- Integrates with Authorino for validation
+
+**Test API Key**: `secret-api-key-12345`
+
+**Test authentication**:
+```bash
+make test-auth
+```
+
+Expected output:
+```
+=== Test 1: Request without API key (should fail) ===
+HTTP Status: 401
+
+=== Test 2: Request with valid API key (should succeed) ===
+{
+  "method": "GET",
+  "path": "/echo",
+  "headers": {
+    "X-Auth-Data": "authenticated",
+    ...
+  }
+}
+
+=== Test 3: Request with invalid API key (should fail) ===
+HTTP Status: 401
+```
+
+#### 3. RateLimitPolicy
+
+**Purpose**: Limits requests to prevent abuse and ensure fair usage.
+
+**Configuration** (`config/kuadrant/ratelimitpolicy.yaml`):
+- Targets: HTTPRoute `echo-route`
+- Limit: 5 requests per 10 seconds
+- Scope: Global (all clients)
+- Enforcer: Limitador
+
+**What it does**:
+- Tracks request count per time window
+- Returns HTTP 429 (Too Many Requests) when limit exceeded
+- Resets counter after time window
+- Protects backend from overload
+
+**Test rate limiting**:
+```bash
+make test-ratelimit
+```
+
+Expected output (sends 15 requests):
+```
+Request 1: - HTTP 200
+Request 2: - HTTP 200
+Request 3: - HTTP 200
+Request 4: - HTTP 200
+Request 5: - HTTP 200
+Request 6: - HTTP 429  ← Rate limit triggered
+Request 7: - HTTP 429
+...
+Request 15: - HTTP 429
+```
+
+### Testing
+
+#### Complete Flow Test
+
+Test all policies together:
 
 ```bash
 # Get gateway IP
 export INGRESS_IP=$(kubectl get gateway/kuadrant-ingressgateway -n ingress-gateways -o jsonpath='{.status.addresses[0].value}')
+
 # Test HTTPS with auth and rate limiting
 curl -k \
   -H "Authorization: Bearer secret-api-key-12345" \
-  --insecure \ # Because of the self signed certs
-  https://demo.$INGRESS_IP.nip.io/echo
+  https://demo.$INGRESS_IP.nip.io/echo | jq
 
 # Expected: JSON response with echo data
 # HTTP headers will show X-Auth-Data: authenticated
 ```
 
-### Policy Details
+**Note**: Use `-k` or `--insecure` because the gateway uses a self-signed certificate.
 
-**TLSPolicy** (`config/kuadrant/tlspolicy.yaml`):
-- Targets: Gateway `kuadrant-ingressgateway`
-- Certificate: Managed by cert-manager
+#### Individual Policy Tests
 
-**RateLimitPolicy** (`config/kuadrant/ratelimitpolicy.yaml`):
-- Targets: HTTPRoute `echo-route`
-- Limit: 5 requests per 10 seconds
-- Scope: Global (across all clients)
+```bash
+# Test authentication (3 scenarios)
+make test-auth
 
-**AuthPolicy** (`config/kuadrant/authpolicy.yaml`):
-- Targets: HTTPRoute `echo-route`
-- Method: API Key authentication
-- Location: `Authorization: Bearer <key>` header
-- Secret: `api-key-1` in `kuadrant-system` namespace
+# Test rate limiting (triggers 429 after 5 requests)
+make test-ratelimit
+```
+
+### Components
+
+The Kuadrant platform deploys these components:
+
+1. **Kuadrant Operator** - Manages lifecycle of Kuadrant components and enforces TLS/DNS
+2. **Authorino and its operator** - Handles authentication and authorization
+3. **Limitador and its operator** - Enforces rate limiting policies
+
+These are automatically deployed in the `kuadrant-system` namespace when you run `make install-kuadrant`.
+
+### How It Works
+
+#### Request Flow with All Policies
+
+```
+1. Client sends HTTPS request
+   ↓
+2. Gateway terminates TLS (TLSPolicy)
+   - Certificate validated
+   - Traffic decrypted
+   ↓
+3. Authorino validates API key (AuthPolicy)
+   - Checks Authorization header
+   - Validates against Secret
+   - Returns 401 if invalid
+   ↓
+4. Limitador checks rate limit (RateLimitPolicy)
+   - Increments request counter
+   - Returns 429 if limit exceeded
+   ↓
+5. Request forwarded to echo-api
+   ↓
+6. Response returned to client
+```
+
+#### Policy Enforcement Points
+
+- **TLSPolicy**: Enforced at Gateway (ingress-gateways namespace)
+- **AuthPolicy**: Enforced at HTTPRoute (mesh-demo-apps namespace)
+- **RateLimitPolicy**: Enforced at HTTPRoute (mesh-demo-apps namespace)
+
+### Customization
+
+#### Change API Key
+
+Edit the secret:
+```bash
+kubectl edit secret -n kuadrant-system api-key-1
+```
+
+Or apply a new secret:
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-key-1
+  namespace: kuadrant-system
+  labels:
+    authorino.kuadrant.io/managed-by: authorino
+    app: echo-api
+stringData:
+  api_key: "your-new-api-key"
+```
+
+#### Change Rate Limit
+
+Edit the RateLimitPolicy:
+```bash
+kubectl edit ratelimitpolicy -n mesh-demo-apps echo-api-ratelimit
+```
+
+Change `limit` and `window` values:
+```yaml
+limits:
+  "global":
+    rates:
+      - limit: 10        # Number of requests
+        window: 60s      # Time window
+```
+
+#### Disable a Policy
+
+```bash
+# Disable authentication
+kubectl delete authpolicy -n mesh-demo-apps echo-api-auth
+
+# Disable rate limiting
+kubectl delete ratelimitpolicy -n mesh-demo-apps echo-api-ratelimit
+
+# Disable TLS
+kubectl delete tlspolicy -n ingress-gateways gateway-tls-policy
+```
 
 ## Cleanup
 
@@ -365,3 +618,10 @@ make clean
 ```
 
 This deletes the kind cluster and all resources.
+
+### Learn More
+
+- [Istio Documentation](https://istio.io/latest/docs/)
+- [Kuadrant Documentation](https://docs.kuadrant.io/)
+- [Gateway API Documentation](https://gateway-api.sigs.k8s.io/)
+- [cert-manager Documentation](https://cert-manager.io/docs/)
