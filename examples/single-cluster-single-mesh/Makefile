@@ -3,6 +3,7 @@ ISTIO_NS = istio-system
 CNI_NS = istio-cni
 ISTIO_CONFIG_DIR = config/istio
 
+INGRESS_GATEWAY_NAME ?= kuadrant-ingressgateway
 INGRESS_GATEWAY_NS ?= ingress-gateways
 INGRESS_IP ?= 10.89.0.0
 
@@ -20,6 +21,10 @@ SCRIPTS_DIR = scripts
 help:
 	@echo "Example 1: Single Cluster, Single Mesh"
 	@echo ""
+	@echo "Quick Start:"
+	@echo "  make setup                # Install basic setup (no Kuadrant)"
+	@echo "  make setup-with-kuadrant  # Install with Kuadrant policies"
+	@echo ""
 	@echo "Available targets:"
 	@echo ""
 	@echo "Cluster Management:"
@@ -32,7 +37,6 @@ help:
 	@echo "  install-metallb       - Install MetalLB load balancer"
 	@echo "  install-cert-manager  - Install cert-manager"
 	@echo "  install-istio         - Install Istio through sail operator"
-	@echo "  install-kuadrant      - Install Kuadrant operator"
 	@echo "  install-echo-api      - Install echo API test application"
 	@echo "  install-mesh-curl-client   - Install curl client in mesh namespace"
 	@echo "  install-no-mesh-curl-client - Install curl client outside mesh"
@@ -44,10 +48,24 @@ help:
 	@echo "  enable-mtls           - Enable (PERMISSIVE by default) mTLS in the mesh"
 	@echo "  mtls-mode-strict      - Switch to STRICT mTLS mode"
 	@echo "  mtls-mode-permissive  - Switch to PERMISSIVE mTLS mode"
+	@echo ""
+	@echo "Kuadrant Configuration:"
+	@echo "  install-kuadrant      - Install Kuadrant operator and CR"
+	@echo "  setup-gateway-tls     - Setup TLS certificate for gateway"
+	@echo "  install-tlspolicy     - Apply TLSPolicy to gateway"
+	@echo "  install-ratelimit     - Apply RateLimitPolicy to echo-api (5 req/10s)"
+	@echo "  install-auth          - Apply AuthPolicy to echo-api (API key)"
+	@echo "  install-policies      - Install all Kuadrant policies (TLS, RateLimit, Auth)"
+	@echo "  setup-kuadrant        - Install Kuadrant + all policies"
+	@echo ""
+	@echo "Testing:"
 	@echo "  test-mtls             - Test mTLS communication"
+	@echo "  test-auth             - Test API key authentication (3 scenarios)"
+	@echo "  test-ratelimit        - Test rate limiting (triggers 429 after 5 req)"
 	@echo ""
 	@echo "Complete Setup:"
-	@echo "  setup               - Complete installation of all components"
+	@echo "  setup                 - Install all components (without Kuadrant policies)"
+	@echo "  setup-with-kuadrant   - Complete setup including Kuadrant and all policies"
 
 .PHONY: create-cluster-a
 create-cluster-a:
@@ -65,12 +83,6 @@ delete-cluster-a:
 .PHONY: clean
 clean: delete-cluster-a
 	@echo "Clusters deleted"
-
-.PHONY: helm-kuadrant-repo
-helm-kuadrant-repo:
-	@echo "Adding/Updating Kuadrant helm repo..."
-	helm repo add kuadrant https://kuadrant.io/helm-charts/ --force-update
-	helm repo update
 
 .PHONY: install-metallb
 install-metallb:
@@ -143,16 +155,6 @@ install-dependencies:
 	make install-cert-manager
 	make install-istio
 
-.PHONY: install-kuadrant
-install-kuadrant:
-	@echo "Installing Kuadrant operator..."
-	helm install \
-		kuadrant-operator kuadrant/kuadrant-operator \
-		--create-namespace \
-		--namespace $(KUADRANT_NS)
-	kubectl apply -n $(KUADRANT_NS) -f $(KUADRANT_CONFIG_DIR)/kuadrant.yaml
-	@echo "Kuadrant operator installed successfully"
-
 .PHONY: install-ingress-gateway
 install-ingress-gateway:
 	@echo "Installing Ingress Gateway..."
@@ -212,11 +214,94 @@ test-mtls:
 	@echo "=== Test 2: Client outside mesh → echo-api ==="
 	kubectl exec -n $(NO_MESH_CLIENT_NS) deploy/curl-client -- curl -s http://echo-api.$(MESH_APP_NS).svc.cluster.local:3000/echo | jq '.headers["HTTP_X_FORWARDED_CLIENT_CERT"]'
 
-.PHONY: setup
-setup: create-cluster-a helm-kuadrant-repo install-dependencies install-kuadrant install-ingress-gateway install-echo-api install-mesh-curl-client install-no-mesh-curl-client
+# Kuadrant Targets
+.PHONY: install-kuadrant
+install-kuadrant:
+	@echo "Adding/Updating Kuadrant helm repo..."
+	helm repo add kuadrant https://kuadrant.io/helm-charts/ --force-update
+	@echo "Installing Kuadrant operator..."
+	helm install \
+		kuadrant-operator kuadrant/kuadrant-operator \
+		--create-namespace \
+		--namespace $(KUADRANT_NS)
+	kubectl apply -n $(KUADRANT_NS) -f $(KUADRANT_CONFIG_DIR)/kuadrant.yaml
+	@echo "Kuadrant operator installed successfully"
+
+.PHONY: setup-gateway-tls
+setup-gateway-tls:
+	@echo "Setting up TLS certificate for gateway..."
+	@echo "Creating CA issuer from root CA..."
+	kubectl apply -n $(INGRESS_GATEWAY_NS) -f $(CERT_MANAGER_CONFIG_DIR)/ingress-issuer.yaml
+	make install-tlspolicy
+	@echo "Gateway TLS certificate ready!"
+
+.PHONY: install-tlspolicy
+install-tlspolicy:
+	@echo "Installing TLSPolicy..."
+	kubectl apply -n $(INGRESS_GATEWAY_NS) -f $(KUADRANT_CONFIG_DIR)/tlspolicy.yaml
+	@echo "TLSPolicy applied successfully"
+
+.PHONY: install-ratelimit
+install-ratelimit:
+	@echo "Installing RateLimitPolicy..."
+	kubectl apply -n $(MESH_APP_NS) -f $(KUADRANT_CONFIG_DIR)/ratelimitpolicy.yaml
+	@echo "RateLimitPolicy applied successfully"
+
+.PHONY: install-auth
+install-auth:
+	@echo "Installing AuthPolicy..."
+	kubectl apply -f $(KUADRANT_CONFIG_DIR)/authpolicy.yaml
+	@echo "AuthPolicy applied successfully"
 	@echo ""
+	@echo "API Key for testing: secret-api-key-12345"
+
+.PHONY: install-policies
+install-policies: setup-gateway-tls install-tlspolicy install-ratelimit install-auth
+	@echo ""
+	@echo "All Kuadrant policies installed successfully!"
+
+.PHONY: test-auth
+test-auth:
+	@echo "Testing API key authentication..."
+	@echo ""
+	@echo ""
+	@echo "=== Test 1: Request without API key (should fail with 401) ==="
+	curl -k https://demo.$(INGRESS_IP).nip.io/echo -w "\nHTTP Status: %{http_code}\n" || true
+	@echo ""
+	@echo "=== Test 2: Request with valid API key (should succeed) ==="
+	curl -k -H "Authorization: Bearer secret-api-key-12345" https://demo.$(INGRESS_IP).nip.io/echo --insecure | jq
+	@echo ""
+	@echo "=== Test 3: Request with invalid API key (should fail with 401) ==="
+	curl -k -H "Authorization: Bearer wrong-key" https://demo.$(INGRESS_IP).nip.io/echo --insecure -w "\nHTTP Status: %{http_code}\n" || true
+
+.PHONY: test-ratelimit
+test-ratelimit:
+	@echo "Testing Rate Limiting (5 requests per 10 seconds)..."
+	@echo ""
+	@echo "Sending requests to trigger rate limit..."
+	@for i in $$(seq 1 10); do \
+		echo "Request $$i:"; \
+		curl -k -s -H "Authorization: Bearer secret-api-key-12345" \
+			-w " - HTTP %{http_code}\n" https://demo.$(INGRESS_IP).nip.io/echo --insecure -o /dev/null; \
+		sleep 0.5; \
+	done
+	@echo ""
+	@echo "You should see some 429 (Too Many Requests) responses after request 5"
+
+.PHONY: setup-kuadrant
+setup-kuadrant: install-kuadrant install-policies
 	@echo "Waiting for deployments to be ready..."
 	kubectl -n $(KUADRANT_NS) wait --timeout=240s --for=condition=Available deployments --all
+	@echo ""
+	@echo "==================================="
+	@echo "Kuadrant installation complete!"
+	@echo "==================================="
+	@echo ""
+
+.PHONY: setup
+setup: create-cluster-a install-dependencies install-ingress-gateway install-echo-api install-mesh-curl-client install-no-mesh-curl-client
+	@echo ""
+	@echo "Waiting for deployments to be ready..."
 	kubectl -n $(MESH_APP_NS) wait --timeout=240s --for=condition=Available deployments --all
 	@echo ""
 	@echo "==================================="
@@ -226,3 +311,14 @@ setup: create-cluster-a helm-kuadrant-repo install-dependencies install-kuadrant
 	@echo "Test mTLS: make test-mtls"
 	@echo ""
 	@echo "Then change the Istio mTLS mode to Strict and run it again: make tls-mode-strict && make test-mtls"
+
+.PHONY: setup-with-kuadrant
+setup-with-kuadrant: setup setup-kuadrant
+	@echo ""
+	@echo "==================================="
+	@echo "Setup complete!"
+	@echo "==================================="
+	@echo ""
+	@echo "Test HTTPS: make test-https"
+	@echo "Test Auth: make test-auth"
+	@echo "Test Rate Limit: make test-ratelimit"

@@ -1,0 +1,14 @@
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: echo-api-ratelimit
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: echo-route
+  limits:
+    "global":
+      rates:
+        - limit: 5
+          window: 10s
