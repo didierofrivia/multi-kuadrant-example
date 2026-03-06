@@ -329,17 +329,30 @@ euro-info/
 
 ---
 
-### 3. Secure echo-api with Kuadrant using Custom Certificates
+### 🚧 3. Secure echo-api with Kuadrant
+
+#### Part 1: Single Cluster Single Mesh
+- [x] Configure TLSPolicy for echo-api using custom certificates
+- [x] Implement AuthPolicy for authentication
+- [x] Add RateLimitPolicy for API protection
+- [x] Test HTTPS access to echo-api through gateway
+- [x] Validate certificate chain and mTLS end-to-end
+- [x] Test RateLimit and Auth Policies
+- [x] Update Docs with Kuadrant security configuration
+
+#### Part 2: Single Cluster Dual Mesh
+Apply the above for `echo-api` in `demo-apps` namespace, `demo-apps-2` won't be protected
 - [ ] Configure TLSPolicy for echo-api using custom certificates
 - [ ] Implement AuthPolicy for authentication
 - [ ] Add RateLimitPolicy for API protection
 - [ ] Test HTTPS access to echo-api through gateway
 - [ ] Validate certificate chain and mTLS end-to-end
+- [ ] Connect with Gateway and HTTPRoute `echo-api-2` but unprotected
 - [ ] Document Kuadrant security configuration
 
 ---
 
-### 4. Multi-Cluster with Same Mesh Configuration using Custom Certificates
+### 4. Multi-Cluster with Same Mesh Configuration
 - [ ] Set up cluster-b with same Istio version and configuration
 - [ ] Configure shared root CA across both clusters
 - [ ] Distribute custom certificates to cluster-a and cluster-b
