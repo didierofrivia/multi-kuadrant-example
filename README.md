@@ -160,6 +160,7 @@ graph TB
 
             subgraph NS_Client1["mesh-client-apps namespace"]
                 Curl1[curl-client<br/>+ Sidecar]
+                SE1[ServiceEntry<br/>echo-api-2.mesh-demo-apps-2]
             end
         end
 
@@ -176,6 +177,7 @@ graph TB
 
             subgraph NS_Client2["mesh-client-apps-2 namespace"]
                 Curl2[curl-client<br/>+ Sidecar]
+                SE2[ServiceEntry<br/>echo-api.mesh-demo-apps]
             end
         end
     end
@@ -194,6 +196,9 @@ graph TB
 
     Curl1 -.intra-mesh mTLS.-> EchoSvc1
     Curl2 -.intra-mesh mTLS.-> EchoSvc2
+
+    SE1 -.declares.-> EchoSvc2
+    SE2 -.declares.-> EchoSvc1
     Curl1 -.cross-mesh mTLS.-> EchoSvc2
     Curl2 -.cross-mesh mTLS.-> EchoSvc1
 
@@ -215,6 +220,8 @@ graph TB
     style Echo2 fill:#dda0dd
     style Curl1 fill:#98fb98
     style Curl2 fill:#ffb6c1
+    style SE1 fill:#ffd700
+    style SE2 fill:#ffd700
 ```
 
 ---
