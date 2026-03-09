@@ -1,4 +1,4 @@
-# Multi-Cluster App Security with Kuadrant
+# Multi-Mesh App Security with Kuadrant
 
 This repository demonstrates Istio service mesh configurations with Kuadrant and custom CA certificates managed by cert-manager.
 
