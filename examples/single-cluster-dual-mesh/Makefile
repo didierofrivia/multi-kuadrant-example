@@ -12,6 +12,11 @@ MESH_CLIENT_NS_2 = mesh-client-apps-2
 CERT_MANAGER_CONFIG_DIR = config/cert-manager
 SCRIPTS_DIR = scripts
 
+# Gateway and Kuadrant
+INGRESS_GATEWAY_NS = ingress-gateways
+KUADRANT_NS = kuadrant-system
+KUADRANT_CONFIG_DIR = config/kuadrant
+
 .PHONY: help
 help:
 	@echo "Example 2: Single Cluster, Dual Mesh"
@@ -54,8 +59,21 @@ help:
 	@echo "  test-mtls              - Test intra-mesh mTLS (mesh-1 → mesh-1, mesh-2 → mesh-2)"
 	@echo "  test-cross-mesh        - Test cross-mesh communication (all 4 scenarios)"
 	@echo ""
+	@echo "Kuadrant (Optional):"
+	@echo "  setup-kuadrant         - Install Kuadrant + gateway + routes + policies"
+	@echo "  setup-with-kuadrant    - Complete setup including Kuadrant"
+	@echo "  install-kuadrant       - Install Kuadrant operator only"
+	@echo "  install-gateway        - Install ingress gateway"
+	@echo "  install-routes         - Install HTTPRoutes for both meshes"
+	@echo "  install-policies       - Install TLS, Auth, and RateLimit policies"
+	@echo "  restart-mesh-1-istiod  - Restart mesh-1 Istiod (for discovery changes)"
+	@echo "  test-auth              - Test API key authentication (mesh-1)"
+	@echo "  test-ratelimit         - Test rate limiting (mesh-1)"
+	@echo "  test-unprotected       - Test unprotected access (mesh-2)"
+	@echo ""
 	@echo "Quick Start:"
-	@echo "  make setup             # Install everything"
+	@echo "  make setup             # Install dual mesh with demo apps (basic - no ingress protection)"
+	@echo "  make setup-with-kuadrant  # Install with Kuadrant policies (complete - ingress protection)"
 	@echo "  make test-cross-mesh   # Verify cross-mesh mTLS works"
 
 .PHONY: create-cluster-a
@@ -266,3 +284,141 @@ test-cross-mesh:
 	@echo "======================================"
 	@echo "Cross-mesh testing complete!"
 	@echo "======================================"
+
+# Kuadrant Targets
+.PHONY: install-kuadrant
+install-kuadrant:
+	@echo "Installing Kuadrant operator..."
+	helm repo add kuadrant https://kuadrant.io/helm-charts/ --force-update
+	helm install kuadrant-operator kuadrant/kuadrant-operator \
+		--create-namespace \
+		--namespace $(KUADRANT_NS)
+	kubectl label namespace $(KUADRANT_NS) istio-discovery=enabled istio.io/rev=default mesh=mesh-1
+	kubectl apply -n $(KUADRANT_NS) -f $(KUADRANT_CONFIG_DIR)/kuadrant.yaml
+	@echo "Kuadrant operator installed successfully"
+
+.PHONY: install-gateway
+install-gateway:
+	@echo "Installing Ingress Gateway..."
+	kubectl create namespace $(INGRESS_GATEWAY_NS) || true
+	kubectl label namespace $(INGRESS_GATEWAY_NS) istio-discovery=enabled mesh=mesh-1 --overwrite
+	kubectl apply -n $(INGRESS_GATEWAY_NS) -f $(KUADRANT_CONFIG_DIR)/gateway.yaml
+	@echo "Gateway installed"
+
+.PHONY: setup-gateway-tls
+setup-gateway-tls:
+	@echo "Setting up TLS for gateway..."
+	kubectl apply -f $(CERT_MANAGER_CONFIG_DIR)/ingress-issuer.yaml
+	kubectl apply -n $(INGRESS_GATEWAY_NS) -f $(KUADRANT_CONFIG_DIR)/tlspolicy.yaml
+	@echo "TLSPolicy applied"
+
+.PHONY: install-routes
+install-routes:
+	@echo "Installing HTTPRoutes in app namespaces..."
+	kubectl apply -n $(MESH_APP_NS) -f config/apps/echo-route.yaml
+	kubectl apply -n $(MESH_APP_NS_2) -f config/apps/echo-route-2.yaml
+	@echo "HTTPRoutes and ServiceEntry installed"
+
+.PHONY: install-auth
+install-auth:
+	@echo "Installing AuthPolicy (mesh-1 /echo only)..."
+	kubectl apply -f $(KUADRANT_CONFIG_DIR)/authpolicy.yaml
+	@echo "AuthPolicy applied"
+	@echo "API Key: secret-api-key-12345"
+
+.PHONY: install-ratelimit
+install-ratelimit:
+	@echo "Installing RateLimitPolicy (mesh-1 /echo only)..."
+	kubectl apply -n $(MESH_APP_NS) -f $(KUADRANT_CONFIG_DIR)/ratelimitpolicy.yaml
+	@echo "RateLimitPolicy applied"
+
+.PHONY: install-policies
+install-policies: setup-gateway-tls install-auth install-ratelimit
+	@echo "All Kuadrant policies installed"
+
+.PHONY: get-gateway-ip
+get-gateway-ip:
+	@echo "Gateway IP:"
+	@kubectl get gateway/kuadrant-ingressgateway -n $(INGRESS_GATEWAY_NS) \
+		-o jsonpath='{.status.addresses[0].value}' 2>/dev/null || echo "Not ready"
+
+.PHONY: test-auth
+test-auth:
+	@echo "Testing API key authentication on /echo (mesh-1)..."
+	@export INGRESS_IP=$$(kubectl get gateway/kuadrant-ingressgateway -n $(INGRESS_GATEWAY_NS) \
+		-o jsonpath='{.status.addresses[0].value}'); \
+	echo ""; \
+	echo "=== Test 1: Request to /echo without API key (should fail with 401) ==="; \
+	curl -k https://demo.$$INGRESS_IP.nip.io/echo -w "\nHTTP Status: %{http_code}\n" -o /dev/null 2>/dev/null || true; \
+	echo ""; \
+	echo "=== Test 2: Request to /echo with valid API key (should succeed) ==="; \
+	curl -k -H "Authorization: Bearer secret-api-key-12345" \
+		https://demo.$$INGRESS_IP.nip.io/echo 2>/dev/null | jq '.path, .headers["HTTP_X_AUTH_DATA"]' || true; \
+	echo ""; \
+	echo "=== Test 3: Request to /echo with invalid API key (should fail with 401) ==="; \
+	curl -k -H "Authorization: Bearer wrong-key" \
+		https://demo.$$INGRESS_IP.nip.io/echo -w "\nHTTP Status: %{http_code}\n" -o /dev/null 2>/dev/null || true
+
+.PHONY: test-ratelimit
+test-ratelimit:
+	@echo "Testing Rate Limiting on /echo (mesh-1) - 5 requests per 10 seconds..."
+	@export INGRESS_IP=$$(kubectl get gateway/kuadrant-ingressgateway -n $(INGRESS_GATEWAY_NS) \
+		-o jsonpath='{.status.addresses[0].value}'); \
+	echo ""; \
+	for i in $$(seq 1 10); do \
+		echo -n "Request $$i: "; \
+		curl -k -s -H "Authorization: Bearer secret-api-key-12345" \
+			-w "HTTP %{http_code}\n" https://demo.$$INGRESS_IP.nip.io/echo -o /dev/null 2>/dev/null; \
+		sleep 0.5; \
+	done; \
+	echo ""; \
+	echo "Expected: First 5 requests = 200, remaining = 429"
+
+.PHONY: test-unprotected
+test-unprotected:
+	@echo "Testing unprotected access to /echo2 (mesh-2)..."
+	@export INGRESS_IP=$$(kubectl get gateway/kuadrant-ingressgateway -n $(INGRESS_GATEWAY_NS) \
+		-o jsonpath='{.status.addresses[0].value}'); \
+	echo ""; \
+	echo "=== Test 1: Access /echo2 without API key (should succeed) ==="; \
+	curl -k https://demo.$$INGRESS_IP.nip.io/echo2 2>/dev/null | jq '.path' || echo "Request failed"; \
+	echo ""; \
+	echo "=== Test 2: Rapid requests to /echo2 (no rate limit) ==="; \
+	for i in $$(seq 1 10); do \
+		echo -n "Request $$i: "; \
+		curl -k -s -w "HTTP %{http_code}\n" \
+			https://demo.$$INGRESS_IP.nip.io/echo2 -o /dev/null 2>/dev/null; \
+		sleep 0.2; \
+	done; \
+	echo ""; \
+	echo "Expected: All requests = 200 (no auth, no rate limit)"
+
+.PHONY: setup-kuadrant
+setup-kuadrant: install-kuadrant install-gateway install-routes install-policies
+	@echo "Waiting for Kuadrant components to be ready..."
+	kubectl -n $(KUADRANT_NS) wait --timeout=240s --for=condition=Available deployments --all
+	@echo "Waiting for gateway to get IP address..."
+	kubectl wait --timeout=120s --for=jsonpath='{.status.addresses[0].value}' \
+		gateway/kuadrant-ingressgateway -n $(INGRESS_GATEWAY_NS) 2>/dev/null || true
+	@echo ""
+	@echo "======================================"
+	@echo "Kuadrant setup complete!"
+	@echo "======================================"
+	@make get-gateway-ip
+
+.PHONY: setup-with-kuadrant
+setup-with-kuadrant: setup setup-kuadrant
+	@echo ""
+	@echo "======================================"
+	@echo "Dual-mesh with Kuadrant complete!"
+	@echo "======================================"
+	@echo ""
+	@echo "Test protected route (mesh-1):"
+	@echo "  make test-auth"
+	@echo "  make test-ratelimit"
+	@echo ""
+	@echo "Test unprotected route (mesh-2):"
+	@echo "  make test-unprotected"
+	@echo ""
+	@echo "Compare both routes:"
+	@echo "  make test-policy-comparison"

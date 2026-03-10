@@ -1,0 +1,38 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: echo-api-auth
+  namespace: mesh-demo-apps
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: echo-route
+  rules:
+    authentication:
+      "api-key":
+        apiKey:
+          selector:
+            matchLabels:
+              app: echo-api
+        credentials:
+          authorizationHeader:
+            prefix: "Bearer"
+    response:
+      success:
+        headers:
+          "x-auth-data":
+            plain:
+              value: "authenticated"
+---
+# API Key Secret for testing
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-key-1
+  namespace: kuadrant-system
+  labels:
+    authorino.kuadrant.io/managed-by: authorino
+    app: echo-api
+stringData:
+  api_key: "secret-api-key-12345"
