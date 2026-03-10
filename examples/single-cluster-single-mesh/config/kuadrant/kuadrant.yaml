@@ -4,4 +4,4 @@ metadata:
   name: kuadrant-test
 spec:
   mtls:
-    enable: false # TODO: Solve issue that fails to inject the Istio Sidecar
+    enable: true
