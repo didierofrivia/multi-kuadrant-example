@@ -440,62 +440,139 @@ graph TB
             IngressIssuer[ClusterIssuer<br/>ingress-selfsigned-issuer]
         end
 
-        subgraph NS_Kuadrant["kuadrant-system namespace"]
-            KuadrantOp[Kuadrant Operator]
-            Authorino[Authorino]
-            Limitador[Limitador]
-            APIKey[Secret: api-key-1]
+        subgraph NS_CNI["istio-cni namespace"]
+            IstioCNI[Istio CNI<br/>shared by both meshes]
         end
 
-        subgraph NS_GW["ingress-gateways namespace<br/>(mesh=mesh-1)"]
-            GW[Gateway<br/>kuadrant-ingressgateway<br/>HTTPS:443<br/>demo.10.89.0.0.nip.io]
-            TLSPolicy[TLSPolicy<br/>gateway-level]
-            SE_Mesh2[ServiceEntry<br/>echo-api-2]
-        end
+        subgraph Mesh1["Mesh-1"]
+            subgraph NS_Istio1["istio-system namespace"]
+                Istiod1[Istiod Control Plane]
+                PeerAuth1[PeerAuthentication<br/>mode: STRICT]
+                CacertsSecret1[Secret<br/>cacerts]
+            end
 
-        subgraph Mesh1["Mesh-1 (istio-system)"]
-            subgraph NS_Apps1["mesh-demo-apps namespace"]
+            subgraph NS_Kuadrant["kuadrant-system namespace<br/>(mesh=mesh-1, istio.io/rev=default)"]
+                KuadrantOp[Kuadrant Operator]
+                Authorino[Authorino<br/>+ Sidecar]
+                Limitador[Limitador<br/>+ Sidecar]
+                APIKey[Secret: api-key-1]
+            end
+
+            subgraph NS_GW["ingress-gateways namespace<br/>(mesh=mesh-1)"]
+                GW[Gateway<br/>kuadrant-ingressgateway<br/>HTTPS:443<br/>demo.10.89.0.0.nip.io]
+                TLSPolicy[TLSPolicy]
+                SE_Mesh2[ServiceEntry<br/>echo-api-2]
+            end
+
+            subgraph NS_Apps1["mesh-demo-apps namespace<br/>(mesh=mesh-1, istio.io/rev=default)"]
                 Route1[HTTPRoute<br/>echo-route<br/>path: /echo]
-                AuthPolicy[AuthPolicy<br/>route-level]
-                RLPolicy[RateLimitPolicy<br/>route-level]
+                AuthPolicy[AuthPolicy]
+                RLPolicy[RateLimitPolicy]
                 Echo1[echo-api<br/>Service + Deployment<br/>+ Sidecar]
+            end
+
+            subgraph NS_Client1["mesh-client-apps namespace<br/>(mesh=mesh-1, istio.io/rev=default)"]
+                Curl1[curl-client<br/>Deployment<br/>+ Sidecar]
+                SE1[ServiceEntry<br/>echo-api-2.mesh-demo-apps-2]
             end
         end
 
-        subgraph Mesh2["Mesh-2 (istio-system-2)"]
-            subgraph NS_Apps2["mesh-demo-apps-2 namespace<br/>(discovered by mesh-1)"]
+        subgraph Mesh2["Mesh-2"]
+            subgraph NS_Istio2["istio-system-2 namespace"]
+                Istiod2[Istiod Control Plane]
+                PeerAuth2[PeerAuthentication<br/>mode: STRICT]
+                CacertsSecret2[Secret<br/>cacerts]
+            end
+
+            subgraph NS_Apps2["mesh-demo-apps-2 namespace<br/>(mesh=mesh-2, istio.io/rev=default-2)<br/>(discovered by mesh-1)"]
                 Route2[HTTPRoute<br/>echo-route-2<br/>path: /echo2]
                 Echo2[echo-api-2<br/>Service + Deployment<br/>+ Sidecar]
+            end
+
+            subgraph NS_Client2["mesh-client-apps-2 namespace<br/>(mesh=mesh-2, istio.io/rev=default-2)"]
+                Curl2[curl-client<br/>Deployment<br/>+ Sidecar]
+                SE2[ServiceEntry<br/>echo-api.mesh-demo-apps]
             end
         end
     end
 
+    %% External traffic flow
     External[External Traffic<br/>demo.*.nip.io] --> GW
 
+    %% Gateway policy enforcement
     GW -.enforces.-> TLSPolicy
     TLSPolicy -.uses.-> IngressIssuer
 
+    %% Routing
     GW -.routes to.-> Route1
     GW -.routes to.-> Route2
 
+    %% Mesh-1 route policies
     Route1 -.enforces.-> AuthPolicy
     Route1 -.enforces.-> RLPolicy
     Route1 -.backend.-> Echo1
 
+    %% Cross-mesh discovery and routing
     SE_Mesh2 -.discovers.-> Echo2
     Route2 -.backend.-> Echo2
 
+    %% Kuadrant policy enforcement
     AuthPolicy -.validated by.-> Authorino
     Authorino -.uses.-> APIKey
     RLPolicy -.enforced by.-> Limitador
 
+    %% Certificate management
     CertManager -.manages.-> IngressIssuer
     CertManager -.manages.-> RootCA
+    RootCA -.shared by.-> CacertsSecret1
+    RootCA -.shared by.-> CacertsSecret2
+    CacertsSecret1 -.used by.-> Istiod1
+    CacertsSecret2 -.used by.-> Istiod2
 
+    %% Istio control plane management
+    Istiod1 -.manages.-> GW
+    Istiod1 -.injects sidecars.-> Authorino
+    Istiod1 -.injects sidecars.-> Limitador
+    Istiod1 -.injects sidecars.-> Echo1
+    Istiod1 -.injects sidecars.-> Curl1
+    Istiod2 -.injects sidecars.-> Echo2
+    Istiod2 -.injects sidecars.-> Curl2
+
+    %% mTLS enforcement
+    PeerAuth1 -.enforces mTLS.-> Istiod1
+    PeerAuth2 -.enforces mTLS.-> Istiod2
+
+    %% Intra-mesh communication
+    Curl1 -.intra-mesh mTLS.-> Echo1
+    Curl2 -.intra-mesh mTLS.-> Echo2
+
+    %% Cross-mesh communication
+    SE1 -.declares.-> Echo2
+    SE2 -.declares.-> Echo1
+    Curl1 -.cross-mesh mTLS.-> Echo2
+    Curl2 -.cross-mesh mTLS.-> Echo1
+
+    %% Styling - Mesh boundaries (solid)
     style Mesh1 fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
     style Mesh2 fill:#ffe1f5,stroke:#cc0066,stroke-width:2px
-    style NS_GW fill:#fff4e1
-    style NS_Kuadrant fill:#ffe1f5
+
+    %% Styling - Infrastructure namespaces (dashed)
+    style NS_CertManager fill:#fff0e6,stroke-dasharray: 5 5
+    style NS_CNI fill:#f5f5f5,stroke-dasharray: 5 5
+
+    %% Styling - Mesh-1 namespaces (dashed, blue tint)
+    style NS_Istio1 fill:#cce6ff,stroke-dasharray: 5 5
+    style NS_Kuadrant fill:#d9ecff,stroke-dasharray: 5 5
+    style NS_GW fill:#e6f2ff,stroke-dasharray: 5 5
+    style NS_Apps1 fill:#d9ecff,stroke-dasharray: 5 5
+    style NS_Client1 fill:#e6f2ff,stroke-dasharray: 5 5
+
+    %% Styling - Mesh-2 namespaces (dashed, pink tint)
+    style NS_Istio2 fill:#ffcce6,stroke-dasharray: 5 5
+    style NS_Apps2 fill:#ffd9ec,stroke-dasharray: 5 5
+    style NS_Client2 fill:#ffe6f2,stroke-dasharray: 5 5
+
+    %% Styling - Components
     style GW fill:#ffd700
     style TLSPolicy fill:#ff6b6b
     style AuthPolicy fill:#ff8c42
@@ -504,6 +581,23 @@ graph TB
     style Route2 fill:#90ee90
     style Echo1 fill:#87ceeb
     style Echo2 fill:#dda0dd
+    style Curl1 fill:#98fb98
+    style Curl2 fill:#ffb6c1
+    style Istiod1 fill:#87ceeb
+    style Istiod2 fill:#dda0dd
+    style PeerAuth1 fill:#87ceeb
+    style PeerAuth2 fill:#dda0dd
+    style CacertsSecret1 fill:#ff8c42
+    style CacertsSecret2 fill:#ff8c42
+    style KuadrantOp fill:#da70d6
+    style Authorino fill:#da70d6
+    style Limitador fill:#da70d6
+    style CertManager fill:#ff7f50
+    style RootCA fill:#ffa07a
+    style IngressIssuer fill:#ffa07a
+    style SE1 fill:#ffd700
+    style SE2 fill:#ffd700
+    style SE_Mesh2 fill:#ffd700
 ```
 
 ### How It Works

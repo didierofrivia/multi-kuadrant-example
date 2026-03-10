@@ -81,40 +81,42 @@ graph TB
             IngressIssuer[ClusterIssuer<br/>ingress-selfsigned-issuer]
         end
 
-        subgraph NS_Istio["istio-system namespace"]
-            SailOperator[Sail Operator]
-            Istiod[Istiod Control Plane]
-            PeerAuth[PeerAuthentication<br/>mode: PERMISSIVE/STRICT]
-            CacertsSecret[Secret<br/>cacerts]
-        end
-
         subgraph NS_CNI["istio-cni namespace"]
             IstioCNI[Istio CNI]
         end
 
-        subgraph NS_Kuadrant["kuadrant-system namespace"]
-            KuadrantOp[Kuadrant Operator]
-            KuadrantCR[Kuadrant CR<br/>mtls: enabled]
-            Authorino[Authorino]
-            Limitador[Limitador]
-            APIKeySecret[Secret<br/>api-key-1]
-        end
+        subgraph Mesh["Service Mesh<br/>Trust Domain: nip.io"]
+            subgraph NS_Istio["istio-system namespace"]
+                SailOperator[Sail Operator]
+                Istiod[Istiod Control Plane]
+                PeerAuth[PeerAuthentication<br/>mode: PERMISSIVE/STRICT]
+                CacertsSecret[Secret<br/>cacerts]
+            end
 
-        subgraph NS_Gateway["ingress-gateways namespace"]
-            GW[Gateway<br/>kuadrant-ingressgateway<br/>HTTP: 80, HTTPS: 443]
-            TLSPolicy[TLSPolicy<br/>gateway-tls-policy]
-        end
+            subgraph NS_Kuadrant["kuadrant-system namespace<br/>(istio-discovery=enabled)"]
+                KuadrantOp[Kuadrant Operator]
+                KuadrantCR[Kuadrant CR<br/>mtls: enabled]
+                Authorino[Authorino<br/>+ Sidecar]
+                Limitador[Limitador<br/>+ Sidecar]
+                APIKeySecret[Secret<br/>api-key-1]
+            end
 
-        subgraph NS_MeshApps["mesh-demo-apps namespace<br/>(istio-discovery=enabled, istio-injection=enabled)"]
-            HTTPRoute[HTTPRoute<br/>echo-route<br/>path: /echo]
-            AuthPolicy[AuthPolicy<br/>API Key Auth]
-            RateLimitPolicy[RateLimitPolicy<br/>5 req/10s]
-            EchoSvc[Service<br/>echo-api<br/>port: 3000]
-            EchoDep[Deployment<br/>echo-api<br/>+ Envoy Sidecar]
-        end
+            subgraph NS_Gateway["ingress-gateways namespace<br/>(istio-discovery=enabled)"]
+                GW[Gateway<br/>kuadrant-ingressgateway<br/>HTTP: 80, HTTPS: 443]
+                TLSPolicy[TLSPolicy]
+            end
 
-        subgraph NS_MeshClient["mesh-client-apps namespace<br/>(istio-discovery=enabled, istio-injection=enabled)"]
-            CurlMeshDep[Deployment<br/>curl-client<br/>+ Envoy Sidecar]
+            subgraph NS_MeshApps["mesh-demo-apps namespace<br/>(istio-discovery=enabled, istio-injection=enabled)"]
+                HTTPRoute[HTTPRoute<br/>echo-route<br/>path: /echo]
+                AuthPolicy[AuthPolicy]
+                RateLimitPolicy[RateLimitPolicy]
+                EchoSvc[Service<br/>echo-api<br/>port: 3000]
+                EchoDep[Deployment<br/>echo-api<br/>+ Envoy Sidecar]
+            end
+
+            subgraph NS_MeshClient["mesh-client-apps namespace<br/>(istio-discovery=enabled, istio-injection=enabled)"]
+                CurlMeshDep[Deployment<br/>curl-client<br/>+ Envoy Sidecar]
+            end
         end
 
         subgraph NS_NoMeshClient["no-mesh-client-apps namespace"]
@@ -160,21 +162,30 @@ graph TB
     RateLimitPolicy -.enforced by.-> Limitador
 
     %% Istio management
+    Istiod -.manages.-> GW
+    Istiod -.injects.-> Authorino
+    Istiod -.injects.-> Limitador
     Istiod -.injects.-> EchoDep
     Istiod -.injects.-> CurlMeshDep
     PeerAuth -.enforces mTLS.-> Istiod
 
-    %% Styling
-    style NS_MeshApps fill:#e1f5ff
-    style NS_MeshClient fill:#e1ffe1
-    style NS_NoMeshClient fill:#ffe1e1
-    style NS_Gateway fill:#fff4e1
-    style NS_Kuadrant fill:#ffe1f5
-    style NS_Istio fill:#f5e1ff
-    style NS_CertManager fill:#fff0e6
-    style NS_MetalLB fill:#f0f0f0
-    style NS_CNI fill:#f5f5f5
+    %% Styling - Mesh boundary (solid)
+    style Mesh fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
 
+    %% Styling - Infrastructure namespaces outside mesh (dashed)
+    style NS_MetalLB fill:#f0f0f0,stroke-dasharray: 5 5
+    style NS_CertManager fill:#fff0e6,stroke-dasharray: 5 5
+    style NS_CNI fill:#f5f5f5,stroke-dasharray: 5 5
+    style NS_NoMeshClient fill:#ffe1e1,stroke-dasharray: 5 5
+
+    %% Styling - Mesh namespaces (dashed, blue tints)
+    style NS_Istio fill:#cce6ff,stroke-dasharray: 5 5
+    style NS_Kuadrant fill:#d9ecff,stroke-dasharray: 5 5
+    style NS_Gateway fill:#e6f2ff,stroke-dasharray: 5 5
+    style NS_MeshApps fill:#d9ecff,stroke-dasharray: 5 5
+    style NS_MeshClient fill:#e6f2ff,stroke-dasharray: 5 5
+
+    %% Styling - Components
     style GW fill:#ffd700
     style HTTPRoute fill:#90ee90
     style EchoDep fill:#87ceeb
@@ -184,7 +195,6 @@ graph TB
     style RootCACert fill:#ffa07a
     style CacertsSecret fill:#ff8c42
     style CertManager fill:#ff7f50
-
     style TLSPolicy fill:#ffd700
     style AuthPolicy fill:#ffb347
     style RateLimitPolicy fill:#ffb347
