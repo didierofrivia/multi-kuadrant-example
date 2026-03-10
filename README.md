@@ -392,34 +392,74 @@ make clean
 
 ```
 euro-info/
-├── Makefile                              # Top-level orchestrator
-├── README.md                             # This file
-├── kind/                                 # Shared cluster configs
-│   ├── kind-cluster-a.yaml
-│   └── kind-cluster-b.yaml
+├── Makefile                                    # Top-level orchestrator
+├── README.md                                   # This file
+├── kind/                                       # Shared cluster configs
+│   ├── kind-cluster-a.yaml                     # Kind cluster configuration
+│   └── kind-cluster-b.yaml                     # (Reserved for multi-cluster)
+│
 ├── examples/
-│   ├── single-cluster-single-mesh/      # Example 1
-│   │   ├── README.md
-│   │   ├── Makefile
+│   ├── single-cluster-single-mesh/            # Example 1: Single mesh with Kuadrant
+│   │   ├── README.md                          # Complete setup guide
+│   │   ├── Makefile                           # Example-specific targets
 │   │   ├── config/
-│   │   │   ├── cert-manager/
-│   │   │   ├── istio/
-│   │   │   ├── apps/
-│   │   │   ├── kuadrant/
-│   │   │   └── metallb/
+│   │   │   ├── cert-manager/                  # CA certificates (mesh mTLS)
+│   │   │   │   ├── root-ca.yaml               # Root CA certificate
+│   │   │   │   └── ingress-issuer.yaml        # Gateway HTTPS issuer
+│   │   │   ├── istio/                         # Istio configuration
+│   │   │   │   ├── istio.yaml                 # Istio CR (control plane)
+│   │   │   │   ├── cni.yaml                   # Istio CNI
+│   │   │   │   ├── gateway/                   # Gateway configs
+│   │   │   │   └── mtls/                      # PeerAuthentication
+│   │   │   ├── apps/                          # Application manifests
+│   │   │   │   ├── echo.yaml                  # echo-api deployment
+│   │   │   │   ├── echo-route.yaml            # HTTPRoute
+│   │   │   │   ├── curl-mesh.yaml             # curl client (in mesh)
+│   │   │   │   └── curl-no-mesh.yaml          # curl client (outside mesh)
+│   │   │   ├── kuadrant/                      # Kuadrant policies
+│   │   │   │   ├── kuadrant.yaml              # Kuadrant CR
+│   │   │   │   ├── tlspolicy.yaml             # Gateway TLS
+│   │   │   │   ├── authpolicy.yaml            # API key auth
+│   │   │   │   └── ratelimitpolicy.yaml       # Rate limiting
+│   │   │   └── metallb/                       # Load balancer
+│   │   │       └── metallb.yaml               # IP address pool
 │   │   └── scripts/
-│   │       └── create-istio-cacerts.sh
+│   │       └── create-istio-cacerts.sh        # CA secret creation script
 │   │
-│   └── single-cluster-dual-mesh/        # Example 2
-│       ├── README.md
-│       ├── Makefile
+│   └── single-cluster-dual-mesh/             # Example 2: Dual mesh with Kuadrant
+│       ├── README.md                          # Complete setup guide
+│       ├── Makefile                           # Example-specific targets
 │       ├── config/
-│       │   ├── cert-manager/
-│       │   ├── istio/
-│       │   ├── apps/
-│       │   └── metallb/
+│       │   ├── cert-manager/                  # Shared CA for both meshes
+│       │   │   ├── root-ca.yaml               # Shared root CA
+│       │   │   └── ingress-issuer.yaml        # Gateway HTTPS issuer
+│       │   ├── istio/                         # Istio configurations
+│       │   │   ├── istio-mesh-1.yaml          # Mesh-1 control plane
+│       │   │   ├── istio-mesh-2.yaml          # Mesh-2 control plane
+│       │   │   ├── cni.yaml                   # Shared Istio CNI
+│       │   │   └── mtls/                      # PeerAuthentication per mesh
+│       │   │       ├── peerauthentication-mesh-1.yaml
+│       │   │       └── peerauthentication-mesh-2.yaml
+│       │   ├── apps/                          # Application manifests
+│       │   │   ├── echo-mesh-1.yaml           # echo-api in mesh-1
+│       │   │   ├── echo-mesh-2.yaml           # echo-api-2 in mesh-2
+│       │   │   ├── echo-route.yaml            # HTTPRoute for mesh-1
+│       │   │   ├── echo-route-2.yaml          # HTTPRoute for mesh-2
+│       │   │   ├── curl-client-mesh-1.yaml    # curl client in mesh-1
+│       │   │   ├── curl-client-mesh-2.yaml    # curl client in mesh-2
+│       │   │   ├── serviceentry-mesh-1-to-mesh-2.yaml    # Cross-mesh discovery
+│       │   │   ├── serviceentry-mesh-2-to-mesh-1.yaml    # Cross-mesh discovery
+│       │   │   └── serviceentry-gateway-to-mesh-2.yaml   # Gateway to mesh-2
+│       │   ├── kuadrant/                      # Kuadrant policies (mesh-1)
+│       │   │   ├── kuadrant.yaml              # Kuadrant CR
+│       │   │   ├── gateway.yaml               # Gateway in mesh-1
+│       │   │   ├── tlspolicy.yaml             # Gateway TLS
+│       │   │   ├── authpolicy.yaml            # Auth (mesh-1 /echo only)
+│       │   │   └── ratelimitpolicy.yaml       # Rate limit (mesh-1 /echo only)
+│       │   └── metallb/                       # Load balancer
+│       │       └── metallb.yaml               # IP address pool
 │       └── scripts/
-│           └── create-istio-cacerts.sh
+│           └── create-istio-cacerts.sh        # CA secret creation script
 ```
 
 ## TODO
