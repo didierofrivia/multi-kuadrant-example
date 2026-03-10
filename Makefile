@@ -52,13 +52,12 @@ setup-example-1: create-cluster-a
 	@echo "Running Example 1: Single Cluster, Single Mesh"
 	@echo "======================================"
 	@echo ""
-	cd examples/single-cluster-single-mesh && $(MAKE) setup
+	cd examples/single-cluster-single-mesh && $(MAKE) setup-with-kuadrant
 	@echo ""
 	@echo "======================================"
 	@echo "Example 1 complete!"
 	@echo "======================================"
 	@echo ""
-	@echo "Test with: cd examples/single-cluster-single-mesh && make test-mtls"
 
 .PHONY: setup-example-2
 setup-example-2: create-cluster-a
@@ -66,10 +65,9 @@ setup-example-2: create-cluster-a
 	@echo "Running Example 2: Single Cluster, Dual Mesh"
 	@echo "======================================"
 	@echo ""
-	cd examples/single-cluster-dual-mesh && $(MAKE) setup
+	cd examples/single-cluster-dual-mesh && $(MAKE) setup-with-kuadrant
 	@echo ""
 	@echo "======================================"
 	@echo "Example 2 complete!"
 	@echo "======================================"
 	@echo ""
-	@echo "Test with: cd examples/single-cluster-dual-mesh && make test-cross-mesh"
