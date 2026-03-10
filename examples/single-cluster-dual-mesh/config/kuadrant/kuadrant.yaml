@@ -4,4 +4,4 @@ metadata:
   name: kuadrant-test
 spec:
   mtls:
-    enable: true
+    enable: false

@@ -30,6 +30,11 @@ spec:
         - matchLabels:
             istio-discovery: enabled
             mesh: mesh-1
+        - matchExpressions:
+            - key: kubernetes.io/metadata.name
+              operator: In
+              values:
+                - mesh-demo-apps-2
       defaultConfig:
         proxyMetadata:
           ISTIO_META_DNS_CAPTURE: "true"

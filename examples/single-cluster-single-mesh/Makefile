@@ -224,6 +224,7 @@ install-kuadrant:
 		kuadrant-operator kuadrant/kuadrant-operator \
 		--create-namespace \
 		--namespace $(KUADRANT_NS)
+	kubectl label namespace $(KUADRANT_NS) istio-discovery=enabled
 	kubectl apply -n $(KUADRANT_NS) -f $(KUADRANT_CONFIG_DIR)/kuadrant.yaml
 	@echo "Kuadrant operator installed successfully"
 
@@ -232,6 +233,8 @@ setup-gateway-tls:
 	@echo "Setting up TLS certificate for gateway..."
 	@echo "Creating CA issuer from root CA..."
 	kubectl apply -n $(INGRESS_GATEWAY_NS) -f $(CERT_MANAGER_CONFIG_DIR)/ingress-issuer.yaml
+	@echo "Configuring Ingress Gateway for HTTPS..."
+	kubectl apply -n $(INGRESS_GATEWAY_NS) -f $(KUADRANT_CONFIG_DIR)/gateway.yaml
 	make install-tlspolicy
 	@echo "Gateway TLS certificate ready!"
 
