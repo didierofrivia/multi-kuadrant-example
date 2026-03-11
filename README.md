@@ -391,7 +391,7 @@ make clean
 ## Repository Structure
 
 ```
-euro-info/
+multi-kuadrant-example/
 ├── Makefile                                    # Top-level orchestrator
 ├── README.md                                   # This file
 ├── kind/                                       # Shared cluster configs
